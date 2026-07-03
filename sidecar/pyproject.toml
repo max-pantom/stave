@@ -1,0 +1,15 @@
+[project]
+name = "stave-sidecar"
+version = "0.1.0"
+description = "Python chord and beat inference sidecar for STAVE"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "madmom",
+  "numpy",
+]
+
+[project.optional-dependencies]
+package = ["pyinstaller"]
+
+[tool.pyinstaller]
+entry = "infer.py"
