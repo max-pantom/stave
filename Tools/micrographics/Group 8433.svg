@@ -1,0 +1,9 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<rect x="11.9688" y="11.9502" width="40" height="40" fill="#EA0049"/>
+<g id="Repeat group 1_inner" data-figma-trr="r3u0-0f">
+<path d="M43.9421 32.43C43.864 34.3857 43.3086 36.2926 42.3245 37.9844C41.3405 39.6763 39.9575 41.1017 38.2962 42.1365L34.8301 36.572C35.5838 36.1025 36.2112 35.4558 36.6577 34.6882C37.1042 33.9207 37.3561 33.0555 37.3916 32.1683L43.9421 32.43Z" fill="white"/>
+</g>
+<use xlink:href="#Repeat%20group%201_inner" transform="translate(75.598 20.2554) rotate(120)"/>
+<use xlink:href="#Repeat%20group%201_inner" transform="translate(20.2573 75.5975) rotate(-120)"/>
+<circle cx="31.9688" cy="31.9502" r="4" fill="white"/>
+</svg>

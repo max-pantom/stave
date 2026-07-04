@@ -13,6 +13,12 @@ type SymbolDef = {
   viewBox: string;
 };
 
+const recoveredSymbolModules = import.meta.glob("../../micrographics/*.svg", {
+  eager: true,
+  import: "default",
+  query: "?raw",
+}) as Record<string, string>;
+
 type LayoutItem =
   | {
       height: number;
@@ -48,6 +54,7 @@ type RenderConfig = {
   jitter: number;
   maxSpan: number;
   rotate: number;
+  rows: number;
   scale: number;
   seed: string;
   spanChance: number;
@@ -56,57 +63,6 @@ type RenderConfig = {
   wordChance: number;
   words: string[];
 };
-
-const starterSymbols: SymbolDef[] = [
-  {
-    id: "rings",
-    markup:
-      '<circle cx="50" cy="50" r="36" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="50" cy="50" r="18" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="50" cy="50" r="4" fill="currentColor"/><path d="M50 8v18M50 74v18M8 50h18M74 50h18" stroke="currentColor" stroke-width="3"/>',
-    viewBox: "0 0 100 100",
-  },
-  {
-    id: "node",
-    markup:
-      '<path d="M50 10v80M10 50h80M22 22l56 56M78 22 22 78" stroke="currentColor" stroke-width="3"/><circle cx="50" cy="50" r="9" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="50" cy="10" r="5" fill="currentColor"/><circle cx="90" cy="50" r="5" fill="currentColor"/><circle cx="50" cy="90" r="5" fill="currentColor"/><circle cx="10" cy="50" r="5" fill="currentColor"/>',
-    viewBox: "0 0 100 100",
-  },
-  {
-    id: "bars",
-    markup:
-      '<rect x="12" y="22" width="76" height="8" rx="4" fill="currentColor"/><rect x="12" y="46" width="52" height="8" rx="4" fill="currentColor"/><rect x="12" y="70" width="68" height="8" rx="4" fill="currentColor"/><circle cx="84" cy="50" r="7" fill="none" stroke="currentColor" stroke-width="3"/>',
-    viewBox: "0 0 100 100",
-  },
-  {
-    id: "dial",
-    markup:
-      '<circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="3 8"/><path d="M50 50 74 28" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><circle cx="50" cy="50" r="12" fill="currentColor"/>',
-    viewBox: "0 0 100 100",
-  },
-  {
-    id: "chip",
-    markup:
-      '<rect x="18" y="20" width="64" height="60" rx="4" fill="none" stroke="currentColor" stroke-width="4"/><path d="M32 20v-10M50 20v-10M68 20v-10M32 90V80M50 90V80M68 90V80M8 34h10M8 50h10M8 66h10M92 34H82M92 50H82M92 66H82" stroke="currentColor" stroke-width="3"/><path d="M32 58h36M32 42h18" stroke="currentColor" stroke-width="4"/>',
-    viewBox: "0 0 100 100",
-  },
-  {
-    id: "orbit",
-    markup:
-      '<ellipse cx="50" cy="50" rx="42" ry="18" fill="none" stroke="currentColor" stroke-width="3"/><ellipse cx="50" cy="50" rx="18" ry="42" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="50" cy="50" r="8" fill="currentColor"/><circle cx="82" cy="50" r="5" fill="currentColor"/>',
-    viewBox: "0 0 100 100",
-  },
-  {
-    id: "frame",
-    markup:
-      '<path d="M12 34V12h22M66 12h22v22M88 66v22H66M34 88H12V66" fill="none" stroke="currentColor" stroke-width="4"/><path d="M30 50h40M50 30v40" stroke="currentColor" stroke-width="3"/><rect x="38" y="38" width="24" height="24" fill="none" stroke="currentColor" stroke-width="3"/>',
-    viewBox: "0 0 100 100",
-  },
-  {
-    id: "wave",
-    markup:
-      '<path d="M8 58c12-28 24-28 36 0s24 28 48 0" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M8 34h84M8 78h84" stroke="currentColor" stroke-width="3" stroke-dasharray="8 8"/>',
-    viewBox: "0 0 100 100",
-  },
-];
 
 function value<T>(state: ToolcraftState, target: string, fallback: T): T {
   const next = state.values[target];
@@ -131,26 +87,88 @@ function hashSeed(input: string): number {
   return hash >>> 0;
 }
 
+function isBackgroundSvgPaint(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized === "white" ||
+    normalized === "#fff" ||
+    normalized === "#ffffff" ||
+    normalized === "rgb(255,255,255)" ||
+    normalized === "rgb(255 255 255)"
+  );
+}
+
+function normalizeSvgPaintAttribute(match: string, attr: string, quote: string, rawValue: string): string {
+  const value = rawValue.trim();
+  const lowerValue = value.toLowerCase();
+  if (
+    lowerValue === "none" ||
+    lowerValue === "currentcolor" ||
+    lowerValue === "transparent" ||
+    lowerValue.startsWith("url(") ||
+    lowerValue.startsWith("var(")
+  ) {
+    return match;
+  }
+  return ` ${attr}=${quote}${isBackgroundSvgPaint(value) ? "var(--micrographics-background)" : "currentColor"}${quote}`;
+}
+
+function normalizeSvgStyleColors(style: string): string {
+  return style.replace(
+    /\b(fill|stroke)\s*:\s*([^;"]+)/gi,
+    (match: string, attr: string, rawValue: string) => {
+      const value = rawValue.trim();
+      const lowerValue = value.toLowerCase();
+      if (
+        lowerValue === "none" ||
+        lowerValue === "currentcolor" ||
+        lowerValue === "transparent" ||
+        lowerValue.startsWith("url(") ||
+        lowerValue.startsWith("var(")
+      ) {
+        return match;
+      }
+      return `${attr}: ${isBackgroundSvgPaint(value) ? "var(--micrographics-background)" : "currentColor"}`;
+    },
+  );
+}
+
 function sanitizeSvgMarkup(markup: string): string {
   return markup
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, "")
     .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, "")
+    .replace(
+      /\s(fill|stroke)\s*=\s*(["'])([^"']*)\2/gi,
+      normalizeSvgPaintAttribute,
+    )
+    .replace(/\sstyle\s*=\s*(["'])(.*?)\1/gi, (_match: string, quote: string, style: string) => {
+      return ` style=${quote}${normalizeSvgStyleColors(style)}${quote}`;
+    })
     .replace(/javascript:/gi, "");
+}
+
+function svgToSymbolDef(svg: string, id: string): SymbolDef {
+  const viewBox = svg.match(/viewBox=["']([^"']+)["']/i)?.[1] ?? "0 0 100 100";
+  const body = svg
+    .replace(/^[\s\S]*?<svg[^>]*>/i, "")
+    .replace(/<\/svg>[\s\S]*$/i, "");
+  return {
+    id,
+    markup: sanitizeSvgMarkup(body),
+    viewBox,
+  };
 }
 
 function parseSvgSnippets(input: string): SymbolDef[] {
   const matches = input.match(/<svg[\s\S]*?<\/svg>/gi) ?? [];
-  return matches.map((svg, index) => {
-    const viewBox = svg.match(/viewBox=["']([^"']+)["']/i)?.[1] ?? "0 0 100 100";
-    const body = svg
-      .replace(/^[\s\S]*?<svg[^>]*>/i, "")
-      .replace(/<\/svg>[\s\S]*$/i, "");
-    return {
-      id: `pasted-${index}`,
-      markup: sanitizeSvgMarkup(body),
-      viewBox,
-    };
+  return matches.map((svg, index) => svgToSymbolDef(svg, `pasted-${index}`));
+}
+
+function recoveredSvgSymbols(): SymbolDef[] {
+  return Object.entries(recoveredSymbolModules).map(([path, svg], index) => {
+    const name = path.split("/").pop()?.replace(/\.svg$/i, "") ?? `recovered-${index}`;
+    return svgToSymbolDef(svg, `library-${name}-${index}`);
   });
 }
 
@@ -175,10 +193,39 @@ function wordsFromText(text: string): string[] {
     .slice(0, 80);
 }
 
+function cellsAreOpen(
+  occupied: boolean[][],
+  column: number,
+  row: number,
+  columnSpan: number,
+  rowSpan: number,
+): boolean {
+  for (let nextRow = row; nextRow < row + rowSpan; nextRow += 1) {
+    for (let nextColumn = column; nextColumn < column + columnSpan; nextColumn += 1) {
+      if (occupied[nextRow]?.[nextColumn]) return false;
+    }
+  }
+  return true;
+}
+
+function occupyCells(
+  occupied: boolean[][],
+  column: number,
+  row: number,
+  columnSpan: number,
+  rowSpan: number,
+): void {
+  for (let nextRow = row; nextRow < row + rowSpan; nextRow += 1) {
+    for (let nextColumn = column; nextColumn < column + columnSpan; nextColumn += 1) {
+      if (occupied[nextRow]) occupied[nextRow][nextColumn] = true;
+    }
+  }
+}
+
 export function configFromState(state: ToolcraftState): RenderConfig {
   const svgText = value(state, "source.svgText", "");
   const symbols = [
-    ...starterSymbols,
+    ...recoveredSvgSymbols(),
     ...parseSvgSnippets(svgText),
     ...mediaSvgSymbols(state),
   ];
@@ -193,6 +240,7 @@ export function configFromState(state: ToolcraftState): RenderConfig {
     jitter: value(state, "grid.jitter", 12),
     maxSpan: value(state, "span.max", 3),
     rotate: value(state, "span.rotate", 10),
+    rows: value(state, "grid.rows", 22),
     scale: value(state, "grid.scale", 0.82),
     seed: value(state, "grid.seed", "ARCHIVE-2026"),
     spanChance: value(state, "span.chance", 24),
@@ -205,25 +253,45 @@ export function configFromState(state: ToolcraftState): RenderConfig {
 
 export function buildLayout(config: RenderConfig): LayoutItem[] {
   const rng = mulberry32(hashSeed(config.seed));
-  const rows = Math.max(1, Math.round(config.width / (config.width / config.columns)));
-  const cell = config.width / config.columns;
-  const computedRows = Math.max(1, Math.round(config.height / cell));
-  const rowCount = Math.max(computedRows, Math.round(rows * (config.height / config.width)));
+  const cellW = config.width / config.columns;
+  const cellH = config.height / config.rows;
   const items: LayoutItem[] = [];
+  const occupied = Array.from({ length: config.rows }, () =>
+    Array.from({ length: config.columns }, () => false),
+  );
+  const cellPadding = 0.9;
+  const visualScale = Math.max(0.15, Math.min(config.scale, 1.35));
 
-  for (let row = 0; row < rowCount; row += 1) {
+  for (let row = 0; row < config.rows; row += 1) {
     for (let column = 0; column < config.columns; column += 1) {
+      if (occupied[row]?.[column]) continue;
       if (rng() * 100 > config.density) continue;
 
       const canSpan = rng() * 100 < config.spanChance;
-      const span = canSpan ? 1 + Math.floor(rng() * config.maxSpan) : 1;
-      const width = Math.min(span * cell * config.scale, config.width - column * cell);
-      const height = Math.min(span * cell * config.scale, config.height - row * cell);
-      const jitterPx = cell * (config.jitter / 100);
-      const x = column * cell + (cell - width) / 2 + (rng() - 0.5) * jitterPx;
-      const y = row * cell + (cell - height) / 2 + (rng() - 0.5) * jitterPx;
+      const requestedSpan = canSpan ? 1 + Math.floor(rng() * config.maxSpan) : 1;
+      const reservedSpan = Math.max(1, Math.ceil(requestedSpan * Math.max(1, visualScale)));
+      const columnSpan = Math.min(reservedSpan, config.columns - column);
+      const rowSpan = Math.min(reservedSpan, config.rows - row);
+      if (!cellsAreOpen(occupied, column, row, columnSpan, rowSpan)) continue;
+
+      const slotWidth = columnSpan * cellW;
+      const slotHeight = rowSpan * cellH;
+      const width = slotWidth * Math.min(visualScale, 1) * cellPadding;
+      const height = slotHeight * Math.min(visualScale, 1) * cellPadding;
+      const freeX = Math.max(0, slotWidth - width);
+      const freeY = Math.max(0, slotHeight - height);
+      const jitterRatio = config.jitter / 100;
+      const x =
+        column * cellW +
+        freeX / 2 +
+        (rng() - 0.5) * freeX * Math.min(1, jitterRatio * 2);
+      const y =
+        row * cellH +
+        freeY / 2 +
+        (rng() - 0.5) * freeY * Math.min(1, jitterRatio * 2);
       const rotate = (rng() - 0.5) * config.rotate * 2;
       const useWord = config.words.length > 0 && rng() * 100 < config.wordChance;
+      occupyCells(occupied, column, row, columnSpan, rowSpan);
 
       if (useWord) {
         const text = config.words[Math.floor(rng() * config.words.length)] ?? "NODE";
@@ -240,7 +308,8 @@ export function buildLayout(config: RenderConfig): LayoutItem[] {
           y,
         });
       } else {
-        const symbol = config.symbols[Math.floor(rng() * config.symbols.length)] ?? starterSymbols[0];
+        const symbol = config.symbols[Math.floor(rng() * config.symbols.length)];
+        if (!symbol) continue;
         items.push({
           height,
           id: `s-${row}-${column}`,
@@ -256,6 +325,59 @@ export function buildLayout(config: RenderConfig): LayoutItem[] {
   }
 
   return items.slice(0, 900);
+}
+
+function itemColor(item: LayoutItem, config: RenderConfig): string {
+  if (item.kind === "word" && item.colorRole === "accent") return config.accent;
+  return config.foreground;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function escapeAttribute(value: string): string {
+  return escapeHtml(value).replace(/'/g, "&apos;");
+}
+
+function symbolMarkupForExport(symbol: SymbolDef, config: RenderConfig): string {
+  return symbol.markup.replace(/var\(--micrographics-background\)/g, config.background);
+}
+
+function buildMicrographicsSvgMarkup(
+  config: RenderConfig,
+  items: LayoutItem[],
+  includeBackground: boolean,
+): string {
+  const background = includeBackground
+    ? `<rect width="${config.width}" height="${config.height}" fill="${escapeAttribute(config.background)}" />`
+    : "";
+  const nodes = items
+    .map((item) => {
+      if (item.kind === "word") {
+        const fill = escapeAttribute(itemColor(item, config));
+        return `<text dominant-baseline="middle" fill="${fill}" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="${item.fontSize}" font-weight="800" opacity="0.92" text-anchor="middle" transform="translate(${item.x + item.width / 2} ${item.y + item.height / 2}) rotate(${item.rotate})">${escapeHtml(item.text)}</text>`;
+      }
+
+      const color = escapeAttribute(itemColor(item, config));
+      return `<svg color="${color}" height="${item.height}" opacity="0.82" overflow="visible" preserveAspectRatio="xMidYMid meet" transform="rotate(${item.rotate} ${item.x + item.width / 2} ${item.y + item.height / 2})" viewBox="${escapeAttribute(item.symbol.viewBox)}" width="${item.width}" x="${item.x}" y="${item.y}">${symbolMarkupForExport(item.symbol, config)}</svg>`;
+    })
+    .join("");
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${config.width}" height="${config.height}" viewBox="0 0 ${config.width} ${config.height}">${background}<g color="${escapeAttribute(config.foreground)}" fill="none" stroke="currentColor">${nodes}</g></svg>`;
+}
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("PNG export failed to load SVG composition."));
+    image.src = url;
+  });
 }
 
 export function MicrographicsRenderer(): React.JSX.Element {
@@ -283,21 +405,10 @@ export function MicrographicsRenderer(): React.JSX.Element {
       {includeBackground ? (
         <rect width={config.width} height={config.height} fill={config.background} />
       ) : null}
-      <g opacity="0.14" stroke={config.foreground} strokeWidth="1">
-        {Array.from({ length: config.columns + 1 }).map((_, index) => (
-          <line
-            key={`x-${index}`}
-            x1={(config.width / config.columns) * index}
-            x2={(config.width / config.columns) * index}
-            y1="0"
-            y2={config.height}
-          />
-        ))}
-      </g>
       <g color={config.foreground} fill="none" stroke="currentColor">
         {items.map((item) => {
           if (item.kind === "word") {
-            const fill = item.colorRole === "accent" ? config.accent : config.foreground;
+            const fill = itemColor(item, config);
             return (
               <text
                 dominantBaseline="middle"
@@ -316,12 +427,20 @@ export function MicrographicsRenderer(): React.JSX.Element {
           }
 
           return (
-            <g
-              color={config.foreground}
+            <svg
+              color={itemColor(item, config)}
               dangerouslySetInnerHTML={{ __html: item.symbol.markup }}
+              height={item.height}
               key={item.id}
               opacity="0.82"
-              transform={`translate(${item.x} ${item.y}) rotate(${item.rotate} ${item.width / 2} ${item.height / 2}) scale(${item.width / 100} ${item.height / 100})`}
+              overflow="visible"
+              preserveAspectRatio="xMidYMid meet"
+              style={{ "--micrographics-background": config.background } as React.CSSProperties}
+              transform={`rotate(${item.rotate} ${item.x + item.width / 2} ${item.y + item.height / 2})`}
+              viewBox={item.symbol.viewBox}
+              width={item.width}
+              x={item.x}
+              y={item.y}
             />
           );
         })}
@@ -347,16 +466,6 @@ export function drawMicrographicsToCanvas(
     context.fillStyle = config.background;
     context.fillRect(0, 0, config.width, config.height);
   }
-  context.strokeStyle = config.foreground;
-  context.lineWidth = 1;
-  context.globalAlpha = 0.14;
-  for (let index = 0; index <= config.columns; index += 1) {
-    const x = (config.width / config.columns) * index;
-    context.beginPath();
-    context.moveTo(x, 0);
-    context.lineTo(x, config.height);
-    context.stroke();
-  }
   context.globalAlpha = 0.9;
 
   for (const item of items) {
@@ -364,14 +473,15 @@ export function drawMicrographicsToCanvas(
     context.translate(item.x + item.width / 2, item.y + item.height / 2);
     context.rotate((item.rotate * Math.PI) / 180);
     if (item.kind === "word") {
-      context.fillStyle = item.colorRole === "accent" ? config.accent : config.foreground;
+      context.fillStyle = itemColor(item, config);
       context.font = `800 ${item.fontSize}px ui-monospace, Menlo, Consolas, monospace`;
       context.textAlign = "center";
       context.textBaseline = "middle";
       context.fillText(item.text, 0, 0, item.width);
     } else {
-      context.strokeStyle = config.foreground;
-      context.fillStyle = config.foreground;
+      const color = itemColor(item, config);
+      context.strokeStyle = color;
+      context.fillStyle = color;
       const size = Math.min(item.width, item.height);
       context.lineWidth = Math.max(2, size * 0.035);
       context.strokeRect(-item.width / 2 + size * 0.12, -item.height / 2 + size * 0.12, size * 0.76, size * 0.76);
@@ -394,21 +504,35 @@ export function drawMicrographicsToCanvas(
 
 export async function exportMicrographicsPng(state: ToolcraftState): Promise<void> {
   const config = configFromState(state);
-  const items = buildLayout(config);
   const exportBackground = value<{ hex?: string }>(state, "export.background", {
     hex: config.background,
   });
+  const exportConfig = {
+    ...config,
+    background: exportBackground.hex ?? config.background,
+  };
+  const items = buildLayout(exportConfig);
   const includeBackground = value(state, "export.includeBackground", true);
   const resolution = value<string>(state, "export.image.resolution", "4k");
   const canvas = createToolcraftPngExportCanvas({
-    background: exportBackground.hex ?? config.background,
+    background: exportConfig.background,
     includeBackground,
     resolution,
     state,
-    render: ({ context, includeBackground: helperIncludeBackground }) => {
-      drawMicrographicsToCanvas(context, config, items, helperIncludeBackground);
-    },
+    render: () => {},
   });
+
+  const svgMarkup = buildMicrographicsSvgMarkup(exportConfig, items, includeBackground);
+  const svgBlob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
+  const svgUrl = URL.createObjectURL(svgBlob);
+  try {
+    const image = await loadImage(svgUrl);
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("PNG export requires a 2D canvas context.");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((nextBlob) => {

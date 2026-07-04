@@ -1,0 +1,9 @@
+<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="40" height="40" transform="matrix(1 0 0 -1 0 40)" fill="#EA0049"/>
+<rect width="3" height="24" transform="matrix(1 0 0 -1 8 32)" fill="white"/>
+<rect width="4" height="24" transform="matrix(1 0 0 -1 12 32)" fill="white"/>
+<rect width="3" height="24" transform="matrix(1 0 0 -1 17 32)" fill="white"/>
+<rect width="4" height="24" transform="matrix(1 0 0 -1 21 32)" fill="white"/>
+<rect width="1" height="24" transform="matrix(1 0 0 -1 26 32)" fill="white"/>
+<rect width="4" height="24" transform="matrix(1 0 0 -1 28 32)" fill="white"/>
+</svg>

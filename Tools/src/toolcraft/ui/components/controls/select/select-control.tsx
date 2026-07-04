@@ -43,9 +43,37 @@ export type SelectControlProps =
   | SelectControlGroupProps;
 
 const WIDE_SELECT_OPTION_LABEL_LENGTH = 32;
+const HEX_COLOR_VALUE_PATTERN = /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i;
 
 function hasWideSelectContent(options: readonly ControlOption[]): boolean {
   return options.some((option) => option.label.length >= WIDE_SELECT_OPTION_LABEL_LENGTH);
+}
+
+function isHexColorValue(value: string): boolean {
+  return HEX_COLOR_VALUE_PATTERN.test(value.trim());
+}
+
+function SelectOptionLabel({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}): React.JSX.Element {
+  if (!isHexColorValue(value)) {
+    return <>{label}</>;
+  }
+
+  return (
+    <span className="inline-flex min-w-0 items-center gap-2">
+      <span
+        aria-hidden="true"
+        className="size-3 shrink-0 rounded-[3px] border border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] shadow-[inset_0_0_0_1px_color-mix(in_oklab,white_18%,transparent)]"
+        style={{ backgroundColor: value }}
+      />
+      <span className="min-w-0 truncate">{label}</span>
+    </span>
+  );
 }
 
 function isSelectControlGroupProps(
@@ -110,12 +138,20 @@ export function StaticSelect({
                 watch={[selected?.label]}
               >
                 <span className="block min-w-max whitespace-nowrap pr-2" title={selected?.label}>
-                  {selected?.label ?? ""}
+                  {selected ? (
+                    <SelectOptionLabel label={selected.label} value={selected.value} />
+                  ) : (
+                    ""
+                  )}
                 </span>
               </ScrollFade>
             ) : (
               <span className="block min-w-0 flex-1 whitespace-nowrap pr-2" title={selected?.label}>
-                {selected?.label ?? ""}
+                {selected ? (
+                  <SelectOptionLabel label={selected.label} value={selected.value} />
+                ) : (
+                  ""
+                )}
               </span>
             )
           }
@@ -129,7 +165,7 @@ export function StaticSelect({
         <SelectGroup>
           {options.map((item) => (
             <SelectItem key={item.value} title={item.label} value={item.value}>
-              {item.label}
+              <SelectOptionLabel label={item.label} value={item.value} />
             </SelectItem>
           ))}
         </SelectGroup>

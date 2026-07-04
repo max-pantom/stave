@@ -4,7 +4,7 @@
 
 Mode: product
 
-Micrographics Grid Composer is a Toolcraft product app for seeded vector layouts inspired by dense archival HUD/micrographics posters. Users provide SVG symbols and words, tune an invisible grid, constrain colors to the supplied palette, allow random multi-cell spans, and export a PNG.
+Micrographics Grid Composer is a Toolcraft product app for seeded vector layouts. The later screenshot reference was used only to understand grid/randomness behavior, not as artwork to recreate. Users provide SVG symbols and words, tune an invisible grid, constrain colors to the supplied palette, allow random multi-cell spans, and export a PNG.
 
 ## Decision Trail
 
@@ -21,9 +21,28 @@ Micrographics Grid Composer is a Toolcraft product app for seeded vector layouts
 - Alternatives rejected: DOM output was rejected because SVG transforms and export alignment are cleaner in SVG. WebGL/WebGPU were rejected because this is vector/text output at a bounded node count rather than shader or pixel workload.
 - State/output mapping: Runtime values under `source.*`, `grid.*`, `span.*`, `appearance.*`, and `export.*` drive deterministic layout and product rendering; `mediaAssets` with `source.svgFiles` supplies uploaded SVGs; `panelActions` invokes PNG export.
 - Files changed: `src/app/app-schema.ts`, `src/app/micrographics-renderer.tsx`, `src/routes/index.tsx`, `src/styles.css`, `src/app/app-acceptance.ts`, `src/app/app-performance.ts`, `src/app/app-schema.test.ts`, this worklog.
-- Verification: Pending local checks after implementation.
+- Verification: `pnpm typecheck` and `pnpm build` pass after implementation.
 - Skipped checks: None yet.
 - Risks: Uploaded SVG files render exactly in preview via SVG image embedding; PNG export uses a canvas-safe symbolic fallback for uploaded SVGs, so uploaded artwork may not rasterize identically in exported PNG until an async SVG image raster pass is added.
+
+### Iteration 2 — Recovered SVG Library
+
+- Request: Use the supplied screenshot only to understand seeded grid/randomness behavior, not to recreate the screenshot's image blocks.
+- Asset recovery: Restored 28 SVG files from `/Users/macbook/Downloads/MAIN (1)` and `/Users/macbook/Downloads/MAIN (2)` into `Tools/micrographics`.
+- User-visible result: The recovered SVG folder is now part of the default symbol library, alongside upload and pasted SVG sources.
+- Direction update: Removed screenshot-derived panel blocks and kept uniform seeded placement on a scalable invisible grid with optional jitter, density, spans, and words.
+- Palette rule: Library SVG fill/stroke colors are normalized to `currentColor` so rendered symbols stay inside the allowed palette controls.
+- Files changed: `src/app/micrographics-renderer.tsx`, `src/app/app-schema.ts`, this worklog.
+- Verification: `pnpm typecheck` and `pnpm build` pass after retune.
+
+### Iteration 3 — SVG Fidelity + Collision-Free Placement
+
+- Request: Newly added SVGs should render correctly, white SVG regions should use the background color, grid lines should stay hidden, and generated graphics should not overlap.
+- Asset state: `Tools/micrographics` now contains 36 SVG files and is the default library.
+- Rendering update: White/near-white SVG fill and stroke values are mapped to the selected background color; non-white SVG paints are mapped to the selected graphics color.
+- Layout update: Added seeded grid occupancy so multi-cell graphics reserve their cells and later items skip occupied slots.
+- Export update: PNG export now rasterizes the same SVG composition used by preview instead of drawing generic canvas fallback symbols.
+- Verification: `pnpm typecheck` and `pnpm build` pass after this pass.
 
 ## Decisions
 
@@ -65,15 +84,16 @@ Micrographics Grid Composer is a Toolcraft product app for seeded vector layouts
 
 ## Evidence
 
-- Source reviewed: prompt image, color JSON attachment, Toolcraft local docs.
+- Source reviewed: screenshot path as behavior reference, color JSON attachment, recovered SVG library, Toolcraft local docs.
 - Contract applied: product schema, acceptance inventory, performance inventory, renderer technique, explicit persistence, export controls.
 
 ## Verification
 
-- Planned: `pnpm ai:check`, `pnpm test`, `pnpm build`, `pnpm test:browser`, then `pnpm dev`.
-- Pending: Browser performance checkpoint. Use Playwright fallback if no controlled browser is available.
+- Passed: `pnpm typecheck`, `pnpm build`, and `curl -I http://127.0.0.1:3002/`.
+- Known blocked: `pnpm ai:check` requires Toolcraft AI skills that are not installed in this environment.
+- Skipped: `pnpm test:browser` because it may install Chromium and the user asked to avoid heavy data usage.
 
 ## Risks
 
-- The original SVG folders were not recoverable after scaffold path confusion, so the app ships with a built-in starter symbol library and real upload/paste paths for the user's own SVGs.
-- Exact uploaded SVG rasterization in PNG export is a follow-up; preview is faithful, export is deterministic and aligned but uses canvas-safe marks for uploaded symbol positions.
+- 28 SVGs were recovered into `Tools/micrographics`; any additional files that existed only in the deleted untracked folder were not available locally.
+- Uploaded SVG files embedded as image assets may still keep their original colors in preview/export; SVGs in `Tools/micrographics` and pasted raw SVG markup are palette-normalized.
