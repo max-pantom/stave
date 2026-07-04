@@ -6,6 +6,7 @@ import {
   type ToolcraftState,
 } from "@/toolcraft/runtime";
 import { useToolcraft } from "@/toolcraft/runtime/react";
+import type { ToolcraftMediaAsset } from "@/toolcraft/runtime/state/types";
 
 type SymbolDef = {
   id: string;
@@ -14,6 +15,12 @@ type SymbolDef = {
 };
 
 const recoveredSymbolModules = import.meta.glob("../../micrographics/*.svg", {
+  eager: true,
+  import: "default",
+  query: "?raw",
+}) as Record<string, string>;
+
+const staveSymbolModules = import.meta.glob("../../micrographics-stave/*.svg", {
   eager: true,
   import: "default",
   query: "?raw",
@@ -53,6 +60,7 @@ type RenderConfig = {
   height: number;
   jitter: number;
   maxSpan: number;
+  maskMode: "dark" | "light" | "none";
   rotate: number;
   rows: number;
   scale: number;
@@ -62,6 +70,12 @@ type RenderConfig = {
   width: number;
   wordChance: number;
   words: string[];
+};
+
+type BrightnessMask = {
+  columns: number;
+  rows: number;
+  values: number[];
 };
 
 function value<T>(state: ToolcraftState, target: string, fallback: T): T {
@@ -165,10 +179,10 @@ function parseSvgSnippets(input: string): SymbolDef[] {
   return matches.map((svg, index) => svgToSymbolDef(svg, `pasted-${index}`));
 }
 
-function recoveredSvgSymbols(): SymbolDef[] {
-  return Object.entries(recoveredSymbolModules).map(([path, svg], index) => {
+function symbolsFromModules(modules: Record<string, string>, prefix: string): SymbolDef[] {
+  return Object.entries(modules).map(([path, svg], index) => {
     const name = path.split("/").pop()?.replace(/\.svg$/i, "") ?? `recovered-${index}`;
-    return svgToSymbolDef(svg, `library-${name}-${index}`);
+    return svgToSymbolDef(svg, `${prefix}-${name}-${index}`);
   });
 }
 
@@ -225,7 +239,8 @@ function occupyCells(
 export function configFromState(state: ToolcraftState): RenderConfig {
   const svgText = value(state, "source.svgText", "");
   const symbols = [
-    ...recoveredSvgSymbols(),
+    ...symbolsFromModules(recoveredSymbolModules, "library"),
+    ...symbolsFromModules(staveSymbolModules, "stave"),
     ...parseSvgSnippets(svgText),
     ...mediaSvgSymbols(state),
   ];
@@ -238,6 +253,7 @@ export function configFromState(state: ToolcraftState): RenderConfig {
     grain: value(state, "appearance.grain", 18),
     height: state.canvas.size.height,
     jitter: value(state, "grid.jitter", 12),
+    maskMode: value(state, "grid.maskMode", "none"),
     maxSpan: value(state, "span.max", 3),
     rotate: value(state, "span.rotate", 10),
     rows: value(state, "grid.rows", 22),
@@ -251,7 +267,18 @@ export function configFromState(state: ToolcraftState): RenderConfig {
   };
 }
 
-export function buildLayout(config: RenderConfig): LayoutItem[] {
+function getMaskWeight(
+  config: RenderConfig,
+  mask: BrightnessMask | undefined,
+  column: number,
+  row: number,
+): number {
+  if (!mask || config.maskMode === "none") return 1;
+  const brightness = mask.values[row * mask.columns + column] ?? 0;
+  return config.maskMode === "dark" ? 1 - brightness : brightness;
+}
+
+export function buildLayout(config: RenderConfig, mask?: BrightnessMask): LayoutItem[] {
   const rng = mulberry32(hashSeed(config.seed));
   const cellW = config.width / config.columns;
   const cellH = config.height / config.rows;
@@ -265,7 +292,9 @@ export function buildLayout(config: RenderConfig): LayoutItem[] {
   for (let row = 0; row < config.rows; row += 1) {
     for (let column = 0; column < config.columns; column += 1) {
       if (occupied[row]?.[column]) continue;
-      if (rng() * 100 > config.density) continue;
+      const maskWeight = getMaskWeight(config, mask, column, row);
+      if (config.maskMode !== "none" && maskWeight < 0.06) continue;
+      if (rng() * 100 > config.density * maskWeight) continue;
 
       const canSpan = rng() * 100 < config.spanChance;
       const requestedSpan = canSpan ? 1 + Math.floor(rng() * config.maxSpan) : 1;
@@ -380,10 +409,101 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
+function svgMarkupToDataUrl(markup: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
+}
+
+function getMaskImageAsset(state: ToolcraftState): ToolcraftMediaAsset | undefined {
+  return state.mediaAssets.find((asset) => asset.sourceTarget === "source.maskImage");
+}
+
+function drawMaskImage(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  width: number,
+  height: number,
+  transform: ToolcraftMediaAsset["transform"],
+): void {
+  context.save();
+  context.translate(width / 2, height / 2);
+  if (transform?.rotationDeg) {
+    context.rotate((transform.rotationDeg * Math.PI) / 180);
+  }
+  context.scale(transform?.flipHorizontal ? -1 : 1, transform?.flipVertical ? -1 : 1);
+  const rotated = transform?.rotationDeg === 90 || transform?.rotationDeg === 270;
+  const drawWidth = rotated ? height : width;
+  const drawHeight = rotated ? width : height;
+  context.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+  context.restore();
+}
+
+async function createBrightnessMask(
+  asset: ToolcraftMediaAsset | undefined,
+  config: RenderConfig,
+): Promise<BrightnessMask | undefined> {
+  if (!asset || config.maskMode === "none") return undefined;
+
+  const image = await loadImage(asset.dataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = config.columns;
+  canvas.height = config.rows;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return undefined;
+
+  context.clearRect(0, 0, config.columns, config.rows);
+  drawMaskImage(context, image, config.columns, config.rows, asset.transform);
+
+  const data = context.getImageData(0, 0, config.columns, config.rows).data;
+  const values: number[] = [];
+  for (let index = 0; index < data.length; index += 4) {
+    const alpha = data[index + 3] / 255;
+    const brightness =
+      ((data[index] * 0.2126 + data[index + 1] * 0.7152 + data[index + 2] * 0.0722) / 255) *
+      alpha;
+    values.push(brightness);
+  }
+
+  return {
+    columns: config.columns,
+    rows: config.rows,
+    values,
+  };
+}
+
+function useBrightnessMask(
+  state: ToolcraftState,
+  config: RenderConfig,
+): BrightnessMask | undefined {
+  const [mask, setMask] = React.useState<BrightnessMask | undefined>();
+  const asset = getMaskImageAsset(state);
+  const assetKey = `${asset?.id ?? "none"}:${asset?.dataUrl ?? ""}:${JSON.stringify(asset?.transform ?? {})}`;
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setMask(undefined);
+    if (!asset || config.maskMode === "none") return undefined;
+
+    createBrightnessMask(asset, config)
+      .then((nextMask) => {
+        if (!cancelled) setMask(nextMask);
+      })
+      .catch(() => {
+        if (!cancelled) setMask(undefined);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [asset, assetKey, config.columns, config.rows, config.maskMode]);
+
+  return mask;
+}
+
 export function MicrographicsRenderer(): React.JSX.Element {
   const { state } = useToolcraft();
   const config = React.useMemo(() => configFromState(state), [state]);
-  const items = React.useMemo(() => buildLayout(config), [config]);
+  const mask = useBrightnessMask(state, config);
+  const items = React.useMemo(() => buildLayout(config, mask), [config, mask]);
   const includeBackground = shouldIncludeToolcraftPreviewBackground({ state });
 
   return (
@@ -511,9 +631,10 @@ export async function exportMicrographicsPng(state: ToolcraftState): Promise<voi
     ...config,
     background: exportBackground.hex ?? config.background,
   };
-  const items = buildLayout(exportConfig);
   const includeBackground = value(state, "export.includeBackground", true);
   const resolution = value<string>(state, "export.image.resolution", "4k");
+  const mask = await createBrightnessMask(getMaskImageAsset(state), exportConfig);
+  const items = buildLayout(exportConfig, mask);
   const canvas = createToolcraftPngExportCanvas({
     background: exportConfig.background,
     includeBackground,
@@ -523,15 +644,26 @@ export async function exportMicrographicsPng(state: ToolcraftState): Promise<voi
   });
 
   const svgMarkup = buildMicrographicsSvgMarkup(exportConfig, items, includeBackground);
-  const svgBlob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
-  const svgUrl = URL.createObjectURL(svgBlob);
   try {
-    const image = await loadImage(svgUrl);
+    const image = await loadImage(svgMarkupToDataUrl(svgMarkup));
     const context = canvas.getContext("2d");
     if (!context) throw new Error("PNG export requires a 2D canvas context.");
+    context.clearRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  } finally {
-    URL.revokeObjectURL(svgUrl);
+  } catch {
+    const fallbackCanvas = createToolcraftPngExportCanvas({
+      background: exportConfig.background,
+      includeBackground,
+      resolution,
+      state,
+      render: ({ context, includeBackground: helperIncludeBackground }) => {
+        drawMicrographicsToCanvas(context, exportConfig, items, helperIncludeBackground);
+      },
+    });
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("PNG export requires a 2D canvas context.");
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(fallbackCanvas, 0, 0);
   }
 
   const blob = await new Promise<Blob>((resolve, reject) => {
@@ -544,6 +676,8 @@ export async function exportMicrographicsPng(state: ToolcraftState): Promise<voi
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = `micrographics-${config.seed.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.png`;
+  document.body.append(anchor);
   anchor.click();
+  anchor.remove();
   URL.revokeObjectURL(url);
 }

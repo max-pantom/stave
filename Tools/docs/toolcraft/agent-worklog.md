@@ -44,6 +44,18 @@ Micrographics Grid Composer is a Toolcraft product app for seeded vector layouts
 - Export update: PNG export now rasterizes the same SVG composition used by preview instead of drawing generic canvas fallback symbols.
 - Verification: `pnpm typecheck` and `pnpm build` pass after this pass.
 
+### Iteration 4 — Image Mask, Export Fallback, STAVE Lore Assets
+
+- Request: Fix export, allow an uploaded image to guide micrographics by light/dark areas, add more STAVE-related micrographics in the prior style, place them in a new identifiable folder, then commit and push.
+- Source/lore reviewed: Original STAVE build guide covering system audio capture, ring buffer, 5-second audio windows, Python sidecar, madmom chord/beat inference, CRF/Viterbi smoothing, chord ticker, waveform, latency, and SHM later.
+- User-visible result: Source now includes an Image mask upload; Grid includes Image mask mode options Off, Light areas, and Dark areas.
+- Rendering update: Preview samples the uploaded image into the invisible grid and biases seeded placement into light or dark cells.
+- Export update: PNG export uses the same sampled mask as preview and falls back to canvas drawing if SVG rasterization fails.
+- Asset update: Added 12 STAVE-themed SVGs in `Tools/micrographics-stave` and wired that folder into the default symbol library.
+- Lore update: Default words now use STAVE terms such as CHORD_TICKER, BEAT_SYNC, AUDIO_WINDOW, RING_BUFFER, SIDECAR, MADMOM, VITERBI, CRF, PCM_STREAM, WAVEFORM, LOOPBACK, LATENCY, and SHM_LATER.
+- Verification: `pnpm typecheck` and `pnpm build` pass after this pass; `curl -I http://127.0.0.1:3002/` returns 200.
+- Skipped: Playwright export smoke test because the browser executable is not installed and installing it would download Chromium.
+
 ## Decisions
 
 ### Renderer
