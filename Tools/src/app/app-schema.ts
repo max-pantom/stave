@@ -38,6 +38,24 @@ export const appSchema = defineToolcraft({
         {
           title: "Source",
           controls: {
+            useMainLibrary: {
+              defaultValue: true,
+              description: "Use the recovered main micrographics folder.",
+              label: "Main library",
+              performanceReason: "Toggling the main library selects a fixed built-in symbol pool.",
+              performanceRole: "responsiveness",
+              target: "source.useMainLibrary",
+              type: "switch",
+            },
+            useStaveLibrary: {
+              defaultValue: true,
+              description: "Use the STAVE micrographics folder.",
+              label: "STAVE library",
+              performanceReason: "Toggling the STAVE library selects a fixed built-in symbol pool.",
+              performanceRole: "responsiveness",
+              target: "source.useStaveLibrary",
+              type: "switch",
+            },
             svgFiles: {
               accept: ".svg,image/svg+xml",
               assetKind: "file",

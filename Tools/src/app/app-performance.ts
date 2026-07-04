@@ -14,7 +14,15 @@ export const appPerformance: ToolcraftPerformanceConfig = defineToolcraftPerform
       {
         interaction: "control-change",
         invalidates: ["parse-symbols", "build-layout", "svg-preview"],
-        targets: ["source.svgText", "source.words", "grid.seed", "grid.columns", "grid.rows"],
+        targets: [
+          "source.useMainLibrary",
+          "source.useStaveLibrary",
+          "source.svgText",
+          "source.words",
+          "grid.seed",
+          "grid.columns",
+          "grid.rows",
+        ],
       },
       {
         interaction: "control-drag",
@@ -29,10 +37,15 @@ export const appPerformance: ToolcraftPerformanceConfig = defineToolcraftPerform
     ],
     passes: [
       {
-        cacheKey: ["source.svgText", "mediaAssets"],
+        cacheKey: ["source.useMainLibrary", "source.useStaveLibrary", "source.svgText", "mediaAssets"],
         id: "parse-symbols",
         inputs: ["starter symbols", "pasted SVGs", "uploaded SVGs"],
-        invalidatedBy: ["source.svgText", "source.svgFiles"],
+        invalidatedBy: [
+          "source.useMainLibrary",
+          "source.useStaveLibrary",
+          "source.svgText",
+          "source.svgFiles",
+        ],
         kind: "preprocess",
         output: "intermediate",
         quality: "full",
@@ -42,7 +55,15 @@ export const appPerformance: ToolcraftPerformanceConfig = defineToolcraftPerform
         cacheKey: ["grid.*", "span.*", "source.words", "symbol count"],
         id: "build-layout",
         inputs: ["runtime values", "symbols", "words"],
-        invalidatedBy: ["grid.*", "span.*", "source.words", "source.svgText", "source.svgFiles"],
+        invalidatedBy: [
+          "grid.*",
+          "span.*",
+          "source.words",
+          "source.useMainLibrary",
+          "source.useStaveLibrary",
+          "source.svgText",
+          "source.svgFiles",
+        ],
         kind: "vector-build",
         output: "preview",
         quality: "preview",
@@ -151,6 +172,8 @@ export const appPerformance: ToolcraftPerformanceConfig = defineToolcraftPerform
   ],
   usesCustomRenderer: true,
   workloadTargets: [
+    "source.useMainLibrary",
+    "source.useStaveLibrary",
     "source.svgFiles",
     "source.svgText",
     "source.words",

@@ -238,9 +238,11 @@ function occupyCells(
 
 export function configFromState(state: ToolcraftState): RenderConfig {
   const svgText = value(state, "source.svgText", "");
+  const useMainLibrary = value(state, "source.useMainLibrary", true);
+  const useStaveLibrary = value(state, "source.useStaveLibrary", true);
   const symbols = [
-    ...symbolsFromModules(recoveredSymbolModules, "library"),
-    ...symbolsFromModules(staveSymbolModules, "stave"),
+    ...(useMainLibrary ? symbolsFromModules(recoveredSymbolModules, "library") : []),
+    ...(useStaveLibrary ? symbolsFromModules(staveSymbolModules, "stave") : []),
     ...parseSvgSnippets(svgText),
     ...mediaSvgSymbols(state),
   ];
