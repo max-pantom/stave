@@ -36,6 +36,7 @@ describe("micrographics app schema", () => {
       appSchema.panels.controls?.sections.filter((section) => section.title !== "Setup") ??
       [];
     expect(productSections.map((section) => section.title)).toEqual([
+      "Libraries",
       "Source",
       "Grid",
       "Spans",

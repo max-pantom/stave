@@ -36,7 +36,7 @@ export const appSchema = defineToolcraft({
     controls: {
       sections: [
         {
-          title: "Source",
+          title: "Libraries",
           controls: {
             useMainLibrary: {
               defaultValue: true,
@@ -56,6 +56,11 @@ export const appSchema = defineToolcraft({
               target: "source.useStaveLibrary",
               type: "switch",
             },
+          },
+        },
+        {
+          title: "Source",
+          controls: {
             svgFiles: {
               accept: ".svg,image/svg+xml",
               assetKind: "file",
