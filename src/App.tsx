@@ -11,12 +11,19 @@ type ChordSegment = {
   start: number;
   end: number;
   beat: boolean;
+  sidecar_received_at_ms?: number;
 };
 
 type AudioWindowEvent = {
   sample_rate: number;
   samples: number;
   captured_at_ms: number;
+  emitted_at_ms: number;
+  sidecar_sent_at_ms?: number | null;
+  rms: number;
+  peak: number;
+  silence: boolean;
+  sidecar_skipped: boolean;
   waveform: number[];
 };
 
@@ -32,6 +39,16 @@ const fallbackChords: ChordSegment[] = [
   { chord: "F:maj", start: 3.3, end: 4.4, beat: true },
 ];
 
+type RuntimeMetrics = {
+  captureLatencyMs: number | null;
+  lastWindowAtMs: number | null;
+  peak: number;
+  rms: number;
+  silence: boolean;
+  sidecarLatencyMs: number | null;
+  sidecarSkipped: boolean;
+};
+
 function App() {
   const [status, setStatus] = useState<CaptureStatus>("idle");
   const [message, setMessage] = useState("Ready");
@@ -39,6 +56,15 @@ function App() {
   const [waveform, setWaveform] = useState<number[]>([]);
   const [sampleRate, setSampleRate] = useState<number | null>(null);
   const [debugPath, setDebugPath] = useState("");
+  const [metrics, setMetrics] = useState<RuntimeMetrics>({
+    captureLatencyMs: null,
+    lastWindowAtMs: null,
+    peak: 0,
+    rms: 0,
+    silence: false,
+    sidecarLatencyMs: null,
+    sidecarSkipped: false,
+  });
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const targetWaveformRef = useRef<number[]>(Array.from({ length: 96 }, () => 0.04));
   const animatedWaveformRef = useRef<number[]>(Array.from({ length: 96 }, () => 0.04));
@@ -46,12 +72,35 @@ function App() {
   useEffect(() => {
     const removers = [
       listen<ChordSegment>("chord-detected", (event) => {
-        setChords((current) => [...current, event.payload].slice(-20));
+        const receivedAtMs = Date.now();
+        setChords((current) => [
+          ...current,
+          {
+            ...event.payload,
+            sidecar_received_at_ms: event.payload.sidecar_received_at_ms ?? receivedAtMs,
+          },
+        ].slice(-20));
+        setMetrics((current) => ({
+          ...current,
+          sidecarLatencyMs: event.payload.sidecar_received_at_ms
+            ? Math.max(0, receivedAtMs - event.payload.sidecar_received_at_ms)
+            : 0,
+        }));
       }),
       listen<AudioWindowEvent>("audio-window", (event) => {
+        const receivedAtMs = Date.now();
         setWaveform(event.payload.waveform);
         targetWaveformRef.current = event.payload.waveform;
         setSampleRate(event.payload.sample_rate);
+        setMetrics((current) => ({
+          ...current,
+          captureLatencyMs: Math.max(0, receivedAtMs - event.payload.captured_at_ms),
+          lastWindowAtMs: event.payload.emitted_at_ms,
+          peak: event.payload.peak,
+          rms: event.payload.rms,
+          silence: event.payload.silence,
+          sidecarSkipped: event.payload.sidecar_skipped,
+        }));
       }),
       listen<CaptureStatusEvent>("capture-status", (event) => {
         setStatus(event.payload.status);
@@ -170,6 +219,7 @@ function App() {
 
   const recent = chords.slice(-20);
   const latest = recent[recent.length - 1];
+  const levelText = `RMS ${metrics.rms.toFixed(4)} / Peak ${metrics.peak.toFixed(3)}`;
 
   return (
     <main className="app-shell">
@@ -181,6 +231,21 @@ function App() {
         <div className={`status-pill ${status}`}>
           <span />
           {status}
+        </div>
+      </section>
+
+      <section className="telemetry" aria-label="Runtime telemetry">
+        <div>
+          <span>capture</span>
+          <strong>{metrics.captureLatencyMs === null ? "--" : `${metrics.captureLatencyMs}ms`}</strong>
+        </div>
+        <div>
+          <span>sidecar</span>
+          <strong>{metrics.sidecarSkipped ? "silent" : metrics.sidecarLatencyMs === null ? "--" : `${metrics.sidecarLatencyMs}ms`}</strong>
+        </div>
+        <div>
+          <span>level</span>
+          <strong>{levelText}</strong>
         </div>
       </section>
 
@@ -206,7 +271,10 @@ function App() {
         <div className="panel-header">
           <div>
             <p className="eyebrow">waveform</p>
-            <strong>{sampleRate ? `${sampleRate.toLocaleString()} Hz` : "waiting for audio"}</strong>
+            <strong>
+              {sampleRate ? `${sampleRate.toLocaleString()} Hz` : "waiting for audio"}
+              {metrics.silence ? " / silence gate" : ""}
+            </strong>
           </div>
           <Waves aria-hidden="true" size={22} />
         </div>

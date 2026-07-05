@@ -8,7 +8,8 @@ STAVE is a week-1 MVP for a Tauri desktop app that captures audio, sends overlap
 - Rust capture module uses `cpal`, downmixes incoming PCM to mono, buffers 5 second windows, keeps a 1 second overlap, emits `audio-window`, and can dump the last window to WAV for debugging.
 - Python sidecar under `sidecar/` reads length-prefixed PCM frames from stdin and writes JSONL chord segments to stdout.
 - Rust starts a packaged `src-tauri/binaries/stave-sidecar-*` process when one exists, streams each capture window to stdin, and forwards stdout JSON as `chord-detected`.
-- Frontend listens for `audio-window`, `capture-status`, and future `chord-detected` events.
+- Frontend listens for `audio-window`, `capture-status`, `sidecar-status`, and `chord-detected` events.
+- Runtime telemetry now exposes capture-to-frontend timing, sidecar receive timing, RMS/peak level, and whether a window was skipped by the silence gate.
 
 ## Current MVP Commands
 
@@ -21,4 +22,12 @@ STAVE is a week-1 MVP for a Tauri desktop app that captures audio, sends overlap
 
 - macOS system audio capture still needs ScreenCaptureKit work or a virtual device such as BlackHole. The current Rust path falls back to the default input device on macOS so the UI and WAV debug loop can be tested.
 - The sidecar is registered in Tauri and a local development shim is present for `x86_64-apple-darwin`. `madmom` and the PyInstaller binary still need platform validation with real audio.
-- Do not run `tauri build` yet; the GitHub workflow for packaging has been written as a commented template.
+- Do not run local `tauri build` on constrained data; the GitHub workflow builds an Intel macOS DMG on `macos-13`.
+- Full prompt 6 validation still requires real content checks: studio-clean audio, live recordings, and heavily compressed YouTube-style audio.
+
+## Improvements Added After MVP Pass
+
+- Silence detection skips near-silent windows before sidecar inference while still updating waveform/debug capture state.
+- Sidecar output events include a receive timestamp so frontend latency can be displayed.
+- Sidecar process state is cleared when the child exits, reducing stale running-state failures.
+- README now documents current capabilities, macOS audio caveats, and remaining validation work.

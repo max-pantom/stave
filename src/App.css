@@ -55,7 +55,7 @@ button:disabled {
   margin: 0 auto;
   padding: 32px 0 24px;
   display: grid;
-  grid-template-rows: auto minmax(220px, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(220px, 1fr) auto auto auto;
   gap: 18px;
 }
 
@@ -113,6 +113,36 @@ h1 {
 
 .status-pill.error span {
   background: #ff5a47;
+}
+
+.telemetry {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.telemetry div {
+  min-height: 58px;
+  border: 1px solid rgba(242, 166, 35, 0.14);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: grid;
+  align-content: center;
+  gap: 0.35rem;
+  background: rgba(12, 12, 12, 0.68);
+}
+
+.telemetry span {
+  color: #8d806b;
+  font: 800 0.68rem/1 "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  text-transform: uppercase;
+}
+
+.telemetry strong {
+  min-width: 0;
+  color: #f8e6c0;
+  font: 800 0.9rem/1.15 "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  overflow-wrap: anywhere;
 }
 
 .ticker-panel,
@@ -250,6 +280,10 @@ footer code {
   footer {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .telemetry {
+    grid-template-columns: 1fr;
   }
 
   .ticker-panel {

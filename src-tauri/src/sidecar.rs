@@ -39,11 +39,18 @@ pub fn start_sidecar<R: Runtime>(app: AppHandle<R>, state: &SidecarState) -> Res
         .map_err(|error| format!("Could not start sidecar: {error}"))?;
 
     let app_for_events = app.clone();
+    let child_for_events = Arc::clone(&state.child);
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stdout(line) => {
-                    if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&line) {
+                    if let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&line) {
+                        if let Some(object) = value.as_object_mut() {
+                            object.insert(
+                                "sidecar_received_at_ms".to_string(),
+                                serde_json::Value::from(now_ms() as u64),
+                            );
+                        }
                         let _ = app_for_events.emit("chord-detected", value);
                     }
                 }
@@ -69,6 +76,9 @@ pub fn start_sidecar<R: Runtime>(app: AppHandle<R>, state: &SidecarState) -> Res
                     );
                 }
                 CommandEvent::Terminated(payload) => {
+                    if let Ok(mut child_slot) = child_for_events.lock() {
+                        *child_slot = None;
+                    }
                     let _ = app_for_events.emit(
                         "sidecar-status",
                         SidecarStatusEvent {
@@ -94,6 +104,13 @@ pub fn start_sidecar<R: Runtime>(app: AppHandle<R>, state: &SidecarState) -> Res
     .map_err(|error| error.to_string())?;
 
     Ok(())
+}
+
+fn now_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default()
 }
 
 pub fn stop_sidecar(state: &SidecarState) -> Result<(), String> {

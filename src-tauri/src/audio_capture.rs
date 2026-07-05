@@ -18,6 +18,8 @@ use crate::sidecar;
 
 const WINDOW_SECONDS: usize = 5;
 const OVERLAP_SECONDS: usize = 1;
+const SILENCE_RMS_THRESHOLD: f32 = 0.003;
+const SILENCE_PEAK_THRESHOLD: f32 = 0.015;
 
 #[derive(Default)]
 pub struct CaptureState {
@@ -41,6 +43,12 @@ struct AudioWindowEvent {
     sample_rate: u32,
     samples: usize,
     captured_at_ms: u128,
+    emitted_at_ms: u128,
+    sidecar_sent_at_ms: Option<u128>,
+    rms: f32,
+    peak: f32,
+    silence: bool,
+    sidecar_skipped: bool,
     pcm_f32le_base64: String,
     waveform: Vec<f32>,
 }
@@ -73,9 +81,12 @@ pub fn start_capture(
     let join = thread::Builder::new()
         .name("stave-audio-capture".to_string())
         .spawn(move || {
-            if let Err(error) =
-                run_capture_loop(app_for_thread.clone(), stop_for_thread, last_window, sidecar_child)
-            {
+            if let Err(error) = run_capture_loop(
+                app_for_thread.clone(),
+                stop_for_thread,
+                last_window,
+                sidecar_child,
+            ) {
                 let _ = app_for_thread.emit(
                     "capture-status",
                     CaptureStatusEvent {
@@ -194,8 +205,10 @@ fn run_capture_loop(
                 .build_input_stream(
                     &stream_config,
                     move |data: &[i16], _| {
-                        let converted: Vec<f32> =
-                            data.iter().map(|sample| *sample as f32 / i16::MAX as f32).collect();
+                        let converted: Vec<f32> = data
+                            .iter()
+                            .map(|sample| *sample as f32 / i16::MAX as f32)
+                            .collect();
                         push_interleaved(&converted, channels, &buffer_for_callback);
                     },
                     stream_error_handler(app.clone()),
@@ -291,14 +304,22 @@ fn emit_window(
     samples: Vec<f32>,
     sample_rate: u32,
 ) -> Result<(), String> {
+    let captured_at_ms = now_ms()?;
     let waveform = waveform_buckets(&samples, 96);
+    let (rms, peak) = audio_level(&samples);
+    let silence = rms < SILENCE_RMS_THRESHOLD && peak < SILENCE_PEAK_THRESHOLD;
     let bytes = samples
         .iter()
         .flat_map(|sample| sample.to_le_bytes())
         .collect::<Vec<u8>>();
 
+    let mut sidecar_sent_at_ms = None;
     if let Some(child) = sidecar_child {
-        let _ = sidecar::write_frame(child, sample_rate, &bytes);
+        if !silence {
+            let sent_at = now_ms()?;
+            sidecar::write_frame(child, sample_rate, &bytes)?;
+            sidecar_sent_at_ms = Some(sent_at);
+        }
     }
 
     if let Ok(mut slot) = last_window.lock() {
@@ -313,15 +334,41 @@ fn emit_window(
         AudioWindowEvent {
             sample_rate,
             samples: samples.len(),
-            captured_at_ms: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|error| error.to_string())?
-                .as_millis(),
+            captured_at_ms,
+            emitted_at_ms: now_ms()?,
+            sidecar_sent_at_ms,
+            rms,
+            peak,
+            silence,
+            sidecar_skipped: silence,
             pcm_f32le_base64: general_purpose::STANDARD.encode(bytes),
             waveform,
         },
     )
     .map_err(|error| error.to_string())
+}
+
+fn now_ms() -> Result<u128, String> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())
+        .map(|duration| duration.as_millis())
+}
+
+fn audio_level(samples: &[f32]) -> (f32, f32) {
+    if samples.is_empty() {
+        return (0.0, 0.0);
+    }
+
+    let mut sum_squares = 0.0_f64;
+    let mut peak = 0.0_f32;
+    for sample in samples {
+        let abs = sample.abs();
+        peak = peak.max(abs);
+        sum_squares += (*sample as f64) * (*sample as f64);
+    }
+    let rms = (sum_squares / samples.len() as f64).sqrt() as f32;
+    (rms, peak.min(1.0))
 }
 
 fn waveform_buckets(samples: &[f32], buckets: usize) -> Vec<f32> {
